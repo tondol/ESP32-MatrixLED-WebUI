@@ -1,0 +1,8 @@
+// setup: rename this into wifiinfo.h
+#include <Arduino.h>
+
+const static String default_ssid = "yourssid";
+const static String default_wifipassword = "yourwifipassword";
+const static String default_httpuser = "admin";
+const static String default_httppassword = "admin";
+const static int default_webserverporthttp = 80;
