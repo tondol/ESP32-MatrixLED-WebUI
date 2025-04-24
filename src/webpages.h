@@ -18,7 +18,8 @@ const char index_html[] PROGMEM = R"rawliteral(
   <p>
   <button onclick="listFilesButton()">List Files</button>
   <button onclick="showUploadButtonFancy()">Upload File</button>
-  <button onclick="playTextButton()">Play Text</button>
+  <button onclick="playText1Button()">Play Text 1</button>
+  <button onclick="playText2Button()">Play Text 2</button>
   </p>
   <p>
   <button style="background-color: #999" onclick="logoutButton()">Logout</button>
@@ -91,10 +92,10 @@ function showUploadButtonFancy() {
   "</form>";
   document.getElementById("details").innerHTML = uploadform;
 }
-function playTextButton() {
-  document.getElementById("detailsheader").innerHTML = "<h3>Play Text<h3>";
+function playText1Button() {
+  document.getElementById("detailsheader").innerHTML = "<h3>Play Text 1<h3>";
   var postform =
-  "<form id=\"post_form\" method=\"post\" action=\"/playtext\">" +
+  "<form id=\"post_form\" method=\"post\" action=\"/playtext1\">" +
   "<p><input type=\"text\" name=\"text1\" id=\"text1\" placeholder=\"1行目のテキストを入力します\"></p>" +
   "<p><input type=\"text\" name=\"text2\" id=\"text2\" placeholder=\"2行目のテキストを入力します\"></p>" +
   "<p><input type=\"submit\" value=\"Play Text\"></p>" +
@@ -112,6 +113,25 @@ function playTextButton() {
   document.getElementById("details").innerHTML = postform;
   document.getElementById("text1").value = localStorage.getItem('text1');
   document.getElementById("text2").value = localStorage.getItem('text2');
+}
+function playText2Button() {
+  document.getElementById("detailsheader").innerHTML = "<h3>Play Text 2<h3>";
+  var postform =
+  "<form id=\"post_form\" method=\"post\" action=\"/playtext2\">" +
+  "<p><textarea name=\"text1\" id=\"text1\" placeholder=\"テキストを入力します\"></textarea></p>" +
+  "<p><input type=\"submit\" value=\"Play Text\"></p>" +
+  "</form>";
+  document.addEventListener('submit', (e) => {
+    const form = e.target;
+    fetch(form.action, {
+        method: form.method,
+        body: new FormData(form),
+    });
+    localStorage.setItem('text1', document.getElementById("text1").value);
+    e.preventDefault();
+  });
+  document.getElementById("details").innerHTML = postform;
+  document.getElementById("text1").value = localStorage.getItem('text1');
 }
 function _(el) {
   return document.getElementById(el);

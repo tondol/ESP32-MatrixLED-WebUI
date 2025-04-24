@@ -37,7 +37,7 @@ String sliderValue = "100"; // default brightness value
 Config config;             // configuration
 AsyncWebServer *server;    // initialise webserver
 
-Mode mode = PLAY_GIF_INITIAL; // default mode
+volatile Mode mode = INITIAL; // default mode
 // PLAY_GIF
 File gifFile;
 AnimatedGIF gif;
@@ -45,16 +45,25 @@ String nextGifFileName = "";
 // PLAY_TEXT
 String playText1 = "";
 String playText2 = "";
-uint8_t fontBuf1[MAX_TEXT_LENGTH * 2][16] = {0};
-uint8_t fontBuf2[MAX_TEXT_LENGTH * 2][16] = {0};
-uint16_t sjLength1 = 0;
-uint16_t sjLength2 = 0;
-int16_t scrollMinX1 = 0;
-int16_t scrollMinX2 = 0;
-int16_t scrollMaxX1 = 0;
-int16_t scrollMaxX2 = 0;
+// 2行×MAX_TEXT_LENGTH×16px(×8px)のフォントデータ
+// PLAY_TEXT_1は全体を、PLAY_TEXT_2はindex=0の部分のみを使用
+uint8_t fontBufList[2][MAX_TEXT_LENGTH][16] = {0};
+// ASCII文字が上限まで入力された場合の最大折り返し行数分のsjLengthデータ
+// 日本語文字が含まれる場合はバイト効率的にこれ以上の行数にはならないため考慮不要
+// PLAY_TEXT_1はindex=0,1の部分のみを、PLAY_TEXT_2は全体を使用
+int16_t sjLengthList[MAX_TEXT_LENGTH * 8 / (PANEL_RES_X * PANEL_CHAIN)] = {0};
+// for PLAY_TEXT_1
+int16_t minScrollX1 = 0;
+int16_t minScrollX2 = 0;
+int16_t maxScrollX1 = 0;
+int16_t maxScrollX2 = 0;
 int16_t scrollX1 = 0;
 int16_t scrollX2 = 0;
+// for PLAY_TEXT_2
+int16_t minScrollY = 0;
+int16_t maxScrollY = 0;
+int16_t scrollY = 0;
+int16_t playText1Lines = 0;
 
 //
 uint16_t myBLACK = dma_display->color565(0, 0, 0);
@@ -244,12 +253,10 @@ String listFiles(bool ishtml)
     {
       returnText += "<tr align='left'><td>" + String(foundfile.name()) + "</td><td>" + humanReadableSize(foundfile.size()) + "</td>";
       returnText += "<td>"
-                    "<img src="
-                    "file?name=" +
-                    String(foundfile.name()) + "&action=show>";
-      returnText += "<td><button onclick=\"downloadDeleteButton(\'" + String(foundfile.name()) + "\', \'play\')\">Play</button>";
-      returnText += "<td><button onclick=\"downloadDeleteButton(\'" + String(foundfile.name()) + "\', \'download\')\">Download</button>";
-      returnText += "<td><button onclick=\"downloadDeleteButton(\'" + String(foundfile.name()) + "\', \'delete\')\">Delete</button></tr>";
+                    "<img src=\"/file?name=" + String(foundfile.name()) + "&action=show\">"
+                    "</td>";
+      returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'play')\">Play</button>";
+      returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'delete')\">Delete</button></tr>";
     }
     else
     {
@@ -287,21 +294,16 @@ void drawTextIn8x16Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, in
         int16_t xx = x + 8*j+k;
         int16_t yy = y + i;
         if (FONT_PIXEL_8x16(font_buf, j, i, k)) {
-          if (VALID_X(xx)) {
+          if (VALID_X(xx) && VALID_Y(yy)) {
             dma_display->drawPixel(xx, yy, color);
           }
         } else {
-          if (VALID_X(xx)) {
+          if (VALID_X(xx) && VALID_Y(yy)) {
             dma_display->drawPixel(xx, yy, myBLACK);
           }
         }
       }
     }
-  }
-  // 左にスクロールする前提で、残像が残らないように1列分消す
-  int16_t maxX = x + 8*sj_length;
-  if (VALID_X(maxX)) {
-    dma_display->drawRect(maxX, y, 1, 16, myBLACK);
   }
 }
 
@@ -333,11 +335,46 @@ void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, i
       }
     }
   }
-  // 左にスクロールする前提で、残像が残らないように1列分消す
-  int16_t maxX = x + 8*sj_length * 2;
-  if (VALID_X(maxX)) {
-    dma_display->drawRect(maxX, y, 1, 32, myBLACK);
-  }
+}
+
+// UTF-8文字列を折り返し表示用に分割する関数
+std::vector<String> wrapTextForDisplay(const String s, int16_t maxWidth) {
+    std::vector<String> lines;
+    String currentLine = "";
+    int16_t currentWidth = 0;
+
+    for (size_t i = 0; i < s.length(); ) {
+        uint8_t c = s[i];
+        int charWidth = 0;
+        if ((c & 0x80) == 0) {
+            charWidth = 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            charWidth = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            charWidth = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            charWidth = 4;
+        } else {
+            charWidth = 1;
+        }
+        String currentChar = s.substring(i, i + charWidth);
+        float charDisplayWidth = (charWidth >= 2) ? 16 : 8;
+
+        if (currentWidth + charDisplayWidth > maxWidth) {
+            lines.push_back(currentLine);
+            currentLine = "";
+            currentWidth = 0;
+        }
+
+        currentLine += currentChar;
+        currentWidth += charDisplayWidth;
+        i += charWidth;
+    }
+    if (!currentLine.isEmpty()) {
+        lines.push_back(currentLine);
+    }
+
+    return lines;
 }
 
 /************************* Arduino Sketch Setup and Loop() *******************************/
@@ -472,38 +509,7 @@ void loop()
 {
   while (1) // run forever
   {
-    if (mode == SHOULD_REBOOT)
-    {
-      Serial.println("mode = SHOULD_REBOOT");
-      rebootESP("Web Admin Initiated Reboot");
-      delay(1000);
-
-    } else if (mode == PLAY_TEXT) {
-      Serial.println("mode = PLAY_TEXT");
-      drawTextIn16x32Font(fontBuf1, sjLength1, 0 + scrollX1, 0, myRED);
-      drawTextIn16x32Font(fontBuf2, sjLength2, 0 + scrollX2, 32, myGREEN);
-      scrollX1 = (scrollX1 <= scrollMinX1) ? scrollMaxX1 : (scrollX1 - 1);
-      scrollX2 = (scrollX2 <= scrollMinX2) ? scrollMaxX2 : (scrollX2 - 1);
-      delay(15); // 15ms + 10ms = 25ms
-
-    } else if (mode == PLAY_NEXT_TEXT) {
-      Serial.println("mode = PLAY_NEXT_TEXT");
-      Serial.println("playText1: " + playText1);
-      Serial.println("playText2: " + playText2);
-      sjLength1 = SFR.StrDirect_ShinoFNT_readALL(playText1, fontBuf1);
-      sjLength2 = SFR.StrDirect_ShinoFNT_readALL(playText2, fontBuf2);
-      bool isText1Fixed = sjLength1 * 16 <= PANEL_RES_X * PANEL_CHAIN;
-      bool isText2Fixed = sjLength2 * 16 <= PANEL_RES_X * PANEL_CHAIN;
-      scrollMinX1 = isText1Fixed ? (PANEL_RES_X * PANEL_CHAIN - sjLength1 * 16) / 2 : (-sjLength1 * 16);
-      scrollMinX2 = isText2Fixed ? (PANEL_RES_X * PANEL_CHAIN - sjLength2 * 16) / 2 : (-sjLength2 * 16);
-      scrollMaxX1 = isText1Fixed ? scrollMinX1 : PANEL_RES_X * PANEL_CHAIN;
-      scrollMaxX2 = isText2Fixed ? scrollMinX2 : PANEL_RES_X * PANEL_CHAIN;
-      scrollX1 = scrollMaxX1;
-      scrollX2 = scrollMaxX2;
-      dma_display->fillScreen(myBLACK);
-      mode = PLAY_TEXT;
-
-    } else if (mode == PLAY_GIF_INITIAL) {
+    if (mode == INITIAL) {
       Serial.println("mode = PLAY_GIF_INITIAL");
       root = LittleFS.open(gifDir);
       gifFile = root.openNextFile();
@@ -527,10 +533,87 @@ void loop()
       Serial.println("mode = PLAY_NEXT_GIF");
       gifFile.close();
       gifFile = LittleFS.open(nextGifFileName);
+
       mode = PLAY_GIF;
-      nextGifFileName = "";
+
+    } else if (mode == PLAY_TEXT_1) {
+      // 2行・スクロール表示のモード
+      Serial.println("mode = PLAY_TEXT_1");
+      drawTextIn16x32Font(fontBufList[0], sjLengthList[0], 0 + scrollX1, 0, myRED);
+      drawTextIn16x32Font(fontBufList[1], sjLengthList[1], 0 + scrollX2, 32, myGREEN);
+      int16_t maxX1 = scrollX1 + 8*sjLengthList[0] * 2;
+      int16_t maxX2 = scrollX2 + 8*sjLengthList[1] * 2;
+      if (VALID_X(maxX1)) { // 左にスクロールする前提で、残像が残らないように1列分消す
+        dma_display->drawRect(maxX1, 0, 1, 32, myBLACK);
+      }
+      if (VALID_X(maxX2)) { // 左にスクロールする前提で、残像が残らないように1列分消す
+        dma_display->drawRect(maxX2, 32, 1, 32, myBLACK);
+      }
+      scrollX1 = (scrollX1 <= minScrollX1) ? maxScrollX1 : (scrollX1 - 1);
+      scrollX2 = (scrollX2 <= minScrollX2) ? maxScrollX2 : (scrollX2 - 1);
+      delay(5); // 10ms + 5ms = 15ms
+
+    } else if (mode == PLAY_NEXT_TEXT_1) {
+      Serial.println("mode = PLAY_NEXT_TEXT_1");
+      Serial.println("playText1: " + playText1 + ", len: " + String(playText1.length()));
+      Serial.println("playText2: " + playText2 + ", len: " + String(playText2.length()));
+      sjLengthList[0] = SFR.StrDirect_ShinoFNT_readALL(playText1, fontBufList[0]);
+      sjLengthList[1] = SFR.StrDirect_ShinoFNT_readALL(playText2, fontBufList[1]);
+      bool isText1Fixed = sjLengthList[0] * 16 <= PANEL_RES_X * PANEL_CHAIN;
+      bool isText2Fixed = sjLengthList[1] * 16 <= PANEL_RES_X * PANEL_CHAIN;
+      minScrollX1 = isText1Fixed ? (PANEL_RES_X * PANEL_CHAIN - sjLengthList[0] * 16) / 2 : (-sjLengthList[0] * 16);
+      minScrollX2 = isText2Fixed ? (PANEL_RES_X * PANEL_CHAIN - sjLengthList[1] * 16) / 2 : (-sjLengthList[1] * 16);
+      maxScrollX1 = isText1Fixed ? minScrollX1 : PANEL_RES_X * PANEL_CHAIN;
+      maxScrollX2 = isText2Fixed ? minScrollX2 : PANEL_RES_X * PANEL_CHAIN;
+      scrollX1 = maxScrollX1;
+      scrollX2 = maxScrollX2;
+      dma_display->fillScreen(myBLACK);
+
+      mode = PLAY_TEXT_1;
+
+    } else if (mode == PLAY_TEXT_2) {
+      // 文字数最大化のモード
+      Serial.println("mode = PLAY_TEXT_2");
+      int sumSjLength = 0;
+      for (int i=0; i<playText1Lines; i++) {
+        int16_t y = scrollY + i * 16;
+        int16_t maxY = scrollY + (i+1) * 16;
+        if (y > -16 && y < PANEL_RES_Y) { // 1pxでも描画領域にあるなら描画する
+          drawTextIn8x16Font(&fontBufList[0][sumSjLength], sjLengthList[i], 0, y, myWHITE);
+        }
+        if (VALID_Y(maxY)) { // 上にスクロールする前提で、残像が残らないように1行分消す
+          dma_display->drawRect(0, maxY, PANEL_RES_X * PANEL_CHAIN, 1, myBLACK);
+        }
+        sumSjLength += sjLengthList[i];
+      }
+      scrollY = (scrollY <= minScrollY) ? maxScrollY : scrollY - 1;
+      delay(50); // 10ms + 50ms = 60ms
+
+    } else if (mode == PLAY_NEXT_TEXT_2) {
+      Serial.println("mode = PLAY_NEXT_TEXT_2");
+      Serial.println("playText1: " + playText1 + ", len: " + String(playText1.length()));
+      std::vector<String> ws = wrapTextForDisplay(playText1, PANEL_RES_X * PANEL_CHAIN);
+      playText1Lines = ws.size();
+      int sumSjLength = 0;
+      for (int i=0; i<playText1Lines; i++) {
+        sjLengthList[i] = SFR.StrDirect_ShinoFNT_readALL(ws[i], &fontBufList[0][sumSjLength]);
+        sumSjLength += sjLengthList[i];
+      }
+      bool isTextFixed = playText1Lines <= 4;
+      minScrollY = isTextFixed ? 0 : (-playText1Lines * 16);
+      maxScrollY = isTextFixed ? 0 : PANEL_RES_Y;
+      scrollY = maxScrollY;
+      dma_display->fillScreen(myBLACK);
+
+      mode = PLAY_TEXT_2;
+
+    } else if (mode == SHOULD_REBOOT) {
+      Serial.println("mode = SHOULD_REBOOT");
+      rebootESP("Web Admin Initiated Reboot");
+      delay(1000);
     }
 
+    // 無限ループ時も他タスクが動くように少しdelayさせる
     delay(10);
   }
 } // end loop

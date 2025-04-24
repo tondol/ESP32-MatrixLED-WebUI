@@ -149,7 +149,7 @@ void configureWebServer() {
   server->on("/reboot", HTTP_GET, [](AsyncWebServerRequest * request) {
     String logmessage = "Client:" + request->client()->remoteIP().toString() + " " + request->url();
     if (checkUserWebAuth(request)) {
-      request->send(200, "text/html", reboot_html);
+      request->send(200, "text/html; charset=UTF-8", reboot_html);
       logmessage += " Auth: Success";
       Serial.println(logmessage);
       ESP.restart();
@@ -166,7 +166,7 @@ void configureWebServer() {
     if (checkUserWebAuth(request)) {
       logmessage += " Auth: Success";
       Serial.println(logmessage);
-      request->send(200, "text/plain", listFiles(true));
+      request->send(200, "text/html; charset=UTF-8", listFiles(true));
     } else {
       logmessage += " Auth: Failed";
       Serial.println(logmessage);
@@ -174,7 +174,7 @@ void configureWebServer() {
     }
   });
 
-  server->on("/playtext", HTTP_POST, [](AsyncWebServerRequest * request) {
+  server->on("/playtext1", HTTP_POST, [](AsyncWebServerRequest * request) {
     String logmessage = "Client:" + request->client()->remoteIP().toString() + " " + request->url();
     if (checkUserWebAuth(request)) {
       logmessage += " Auth: Success";
@@ -186,10 +186,31 @@ void configureWebServer() {
         return;
       }
 
-      mode = PLAY_NEXT_TEXT;
       playText1 = String(request->arg("text1").substring(0, MAX_TEXT_LENGTH));
       playText2 = String(request->arg("text2").substring(0, MAX_TEXT_LENGTH));
-      request->send(200, "text/plain", "");
+      mode = PLAY_NEXT_TEXT_1;
+      request->send(200, "text/plain", "OK");
+    } else {
+      logmessage += " Auth: Failed";
+      Serial.println(logmessage);
+      return request->requestAuthentication();
+    }
+  });
+  server->on("/playtext2", HTTP_POST, [](AsyncWebServerRequest * request) {
+    String logmessage = "Client:" + request->client()->remoteIP().toString() + " " + request->url();
+    if (checkUserWebAuth(request)) {
+      logmessage += " Auth: Success";
+      Serial.println(logmessage);
+
+      if (!request->hasArg("text1")) {
+        request->send(400, "text/plain", "ERROR: text1 param required");
+        Serial.println(logmessage + " ERROR: text1 param required");
+        return;
+      }
+
+      playText1 = String(request->arg("text1").substring(0, MAX_TEXT_LENGTH));
+      mode = PLAY_NEXT_TEXT_2;
+      request->send(200, "text/plain", "OK");
     } else {
       logmessage += " Auth: Failed";
       Serial.println(logmessage);
@@ -228,41 +249,31 @@ void configureWebServer() {
       return;
     }
 
-    if (strcmp(fileAction, "download") == 0) {
-      fs::File f = LittleFS.open(fileName, "r");
-      AsyncWebServerResponse* response = request->beginChunkedResponse("application/octet-stream", [f](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-        auto ff = f;
-        if (ff.available()) {
-          return ff.read(buffer, maxLen);
-        } else {
-          ff.close();
-          return 0;
-        }
-      });
-      request->send(response);
-      Serial.println(logHeader + " downloaded");
-    } else if (strcmp(fileAction, "delete") == 0) {
+    if (strcmp(fileAction, "delete") == 0) {
       LittleFS.remove(fileName);
       request->send(200, "text/plain", "Deleted File: " + String(fileName));
       Serial.println(logHeader + " deleted");
+
     } else if (strcmp(fileAction, "play") == 0) {
-      mode = PLAY_NEXT_GIF;
       nextGifFileName = fileName;
+      mode = PLAY_NEXT_GIF;
       Serial.println(logHeader + " opening");
+
     } else if (strcmp(fileAction, "show") == 0) {
       fs::File f = LittleFS.open(fileName, "r");
-      AsyncWebServerResponse* response = request->beginChunkedResponse("image/gif", [f](uint8_t* buffer, size_t maxLen, size_t index) -> size_t {
-        auto ff = f;
-        // 冒頭5KBだけ読み込む
-        if (index >= 5000 || !ff.available()) {
-          ff.close();
-          return 0;
-        } else {
-          return ff.read(buffer, maxLen);
+      // プレビュー用に冒頭5KBだけを返す
+      size_t size = min((size_t)5*1024, f.size());
+      AsyncWebServerResponse* response = request->beginResponse("image/gif", size, [f, size](uint8_t* buffer, size_t maxLen, size_t total) mutable -> size_t {
+        int bytes = f.read(buffer, maxLen);
+        if (bytes + total == size) {
+          f.close();
         }
+        return max(0, bytes);
       });
+      delay(100); // 早すぎると後続のメモリ確保に失敗する??
       request->send(response);
       Serial.println(logHeader + " previewing");
+
     } else {
       request->send(400, "text/plain", "ERROR: invalid action param supplied");
       Serial.println(logHeader + " ERROR: invalid action param supplied");
