@@ -287,19 +287,29 @@ String humanReadableSize(const size_t bytes)
 
 #define FONT_PIXEL_8x16(b, j, i, k) (b[j][i] & (0x80 >> k))
 
+// https://medium.com/@luc.trudeau/fast-averaging-of-high-color-16-bit-pixels-cb4ac7fd1488
+inline uint16_t averageColor565(uint16_t a, uint16_t b) {
+  const uint16_t s = a ^ b;
+  return ((s & 0xF7DEU) >> 1) + (a & b) + (s & 0x0821U);
+}
+
+inline uint16_t averageColor565(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
+  return averageColor565(averageColor565(a, b), averageColor565(c, d));
+}
+
 void drawTextIn8x16Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
   for (int j=0; j<sj_length; j++) {
     for(int i=0; i<16; i++) {
       for (int k=0; k<8; k++) {
-        int16_t xx = x + 8*j+k;
-        int16_t yy = y + i;
+        int16_t xx = 8*j+k;
+        int16_t yy = i;
         if (FONT_PIXEL_8x16(font_buf, j, i, k)) {
-          if (VALID_X(xx) && VALID_Y(yy)) {
-            dma_display->drawPixel(xx, yy, color);
+          if (VALID_X(x + xx) && VALID_Y(y + yy)) {
+            dma_display->drawPixel(x + xx, y + yy, color);
           }
         } else {
-          if (VALID_X(xx) && VALID_Y(yy)) {
-            dma_display->drawPixel(xx, yy, myBLACK);
+          if (VALID_X(x + xx) && VALID_Y(y + yy)) {
+            dma_display->drawPixel(x + xx, y + yy, myBLACK);
           }
         }
       }
@@ -307,31 +317,38 @@ void drawTextIn8x16Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, in
   }
 }
 
+// バイリニア補完で2倍角描画する
 void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
-  for (int j=0; j<sj_length; j++) {
-    for(int i=0; i<16; i++) {
-      for (int k=0; k<8; k++) {
-        int16_t xx = x + (8*j+k) * 2;
-        int16_t yy = y + i * 2;
-        if (FONT_PIXEL_8x16(font_buf, j, i, k)) {
-          if (VALID_X(xx)) {
-            dma_display->drawPixel(xx, yy, color);
-            dma_display->drawPixel(xx, yy + 1, color);
-          }
-          if (VALID_X(xx + 1)) {
-            dma_display->drawPixel(xx + 1, yy, color);
-            dma_display->drawPixel(xx + 1, yy + 1, color);
-          }
-        } else {
-          if (VALID_X(xx)) {
-            dma_display->drawPixel(xx, yy, myBLACK);
-            dma_display->drawPixel(xx, yy + 1, myBLACK);
-          }
-          if (VALID_X(xx + 1)) {
-            dma_display->drawPixel(xx + 1, yy, myBLACK);
-            dma_display->drawPixel(xx + 1, yy + 1, myBLACK);
-          }
+  for (int i=0; i<sj_length * 8; i++) {
+    for (int j=0; j<16; j++) {
+      int x1 = x + i*2;
+      int x2 = x + i*2 + 1;
+      int y1 = y + j*2;
+      int y2 = y + j*2 + 1;
+      int c1 = FONT_PIXEL_8x16(font_buf, i/8, j, i%8) ? color : myBLACK;
+      if (VALID_X(x1)) {
+        int c2 = 0;
+        if (j + 1 < 16) {
+          c2 = FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8) ? color : myBLACK;
         }
+        dma_display->drawPixel(x1, y1, c1);
+        dma_display->drawPixel(x1, y2, averageColor565(c1, c2));
+      }
+      if (VALID_X(x2)) {
+        int c2 = 0;
+        int c3 = 0;
+        int c4 = 0;
+        if (i + 1 < sj_length * 8) {
+          c2 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j, (i+1)%8);
+        }
+        if (j + 1 < 16) {
+          c3 += FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8);
+        }
+        if (i + 1 < sj_length * 8 && j + 1 < 16) {
+          c4 += FONT_PIXEL_8x16(font_buf, (i+1)/8, j+1, (i+1)%8);
+        }
+        dma_display->drawPixel(x2, y1, averageColor565(c1, c2));
+        dma_display->drawPixel(x2, y2, averageColor565(c1, c2, c3, c4));
       }
     }
   }
@@ -340,40 +357,36 @@ void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, i
 // UTF-8文字列を折り返し表示用に分割する関数
 std::vector<String> wrapTextForDisplay(const String s, int16_t maxWidth) {
     std::vector<String> lines;
-    String currentLine = "";
-    int16_t currentWidth = 0;
-
+    String line = "";
+    int16_t lineDisplayWidth = 0;
     for (size_t i = 0; i < s.length(); ) {
         uint8_t c = s[i];
-        int charWidth = 0;
+        int charByteWidth = 0;
         if ((c & 0x80) == 0) {
-            charWidth = 1;
+            charByteWidth = 1;
         } else if ((c & 0xE0) == 0xC0) {
-            charWidth = 2;
+            charByteWidth = 2;
         } else if ((c & 0xF0) == 0xE0) {
-            charWidth = 3;
+            charByteWidth = 3;
         } else if ((c & 0xF8) == 0xF0) {
-            charWidth = 4;
+            charByteWidth = 4;
         } else {
-            charWidth = 1;
+            charByteWidth = 1;
         }
-        String currentChar = s.substring(i, i + charWidth);
-        float charDisplayWidth = (charWidth >= 2) ? 16 : 8;
-
-        if (currentWidth + charDisplayWidth > maxWidth) {
-            lines.push_back(currentLine);
-            currentLine = "";
-            currentWidth = 0;
+        String currentChar = s.substring(i, i + charByteWidth);
+        float charDisplayWidth = (charByteWidth >= 2) ? 16 : 8;
+        if (lineDisplayWidth + charDisplayWidth > maxWidth) {
+            lines.push_back(line);
+            line = "";
+            lineDisplayWidth = 0;
         }
-
-        currentLine += currentChar;
-        currentWidth += charDisplayWidth;
-        i += charWidth;
+        line += currentChar;
+        lineDisplayWidth += charDisplayWidth;
+        i += charByteWidth;
     }
-    if (!currentLine.isEmpty()) {
-        lines.push_back(currentLine);
+    if (!line.isEmpty()) {
+        lines.push_back(line);
     }
-
     return lines;
 }
 
