@@ -32,7 +32,7 @@
 // 
 MatrixPanel_I2S_DMA *dma_display = nullptr;
 
-String sliderValue = "100"; // default brightness value
+int sliderValue = 100; // default brightness value
 
 Config config;             // configuration
 AsyncWebServer *server;    // initialise webserver
@@ -292,59 +292,59 @@ String humanReadableSize(const size_t bytes)
 #define VALID_Y(y) ((y) >= 0 && (y) < PANEL_RES_Y)
 
 // https://medium.com/@luc.trudeau/fast-averaging-of-high-color-16-bit-pixels-cb4ac7fd1488
-inline uint16_t averageColor565(uint16_t a, uint16_t b) {
+inline uint16_t averageOfColor565(uint16_t a, uint16_t b) {
   const uint16_t s = a ^ b;
   return ((s & 0xF7DEU) >> 1) + (a & b) + (s & 0x0821U);
 }
 
-inline uint16_t averageColor565(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
-  return averageColor565(averageColor565(a, b), averageColor565(c, d));
+inline uint16_t averageOfColor565(uint16_t a, uint16_t b, uint16_t c, uint16_t d) {
+  return averageOfColor565(averageOfColor565(a, b), averageOfColor565(c, d));
 }
 
-void drawTextIn8x16Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
-  for (int i=0; i<8 * sj_length; i++) {
+void drawTextIn8x16Font(uint8_t fontBuf[][16], int16_t sjLength, int16_t x, int16_t y, uint16_t color){
+  for (int i=0; i<8 * sjLength; i++) {
     for(int j=0; j<16; j++) {
       int16_t xx = x + i;
       int16_t yy = y + j;
       if (VALID_X(xx) && VALID_Y(yy)) {
-        dma_display->drawPixel(xx, yy, FONT_PIXEL_8x16(font_buf, i/8, j, i%8) ? color : myBLACK);
+        dma_display->drawPixel(xx, yy, FONT_PIXEL_8x16(fontBuf, i/8, j, i%8) ? color : myBLACK);
       }
     }
   }
 }
 
 // バイリニア補完でフォントを2倍角で描画する
-void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
-  for (int i=0; i<sj_length * 8; i++) {
+void drawTextIn16x32Font(uint8_t fontBuf[][16], int16_t sjLength, int16_t x, int16_t y, uint16_t color){
+  for (int i=0; i<sjLength * 8; i++) {
     for (int j=0; j<16; j++) {
       int x1 = x + i*2;
       int x2 = x + i*2 + 1;
       int y1 = y + j*2;
       int y2 = y + j*2 + 1;
-      int c1 = FONT_PIXEL_8x16(font_buf, i/8, j, i%8) ? color : myBLACK;
+      int c1 = FONT_PIXEL_8x16(fontBuf, i/8, j, i%8) ? color : myBLACK;
       int c2 = myBLACK;
       int c3 = myBLACK;
       int c4 = myBLACK;
-      if (i + 1 < sj_length * 8) {
-        c2 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j, (i+1)%8) ? color : myBLACK;
+      if (i + 1 < sjLength * 8) {
+        c2 = FONT_PIXEL_8x16(fontBuf, (i+1)/8, j, (i+1)%8) ? color : myBLACK;
       }
       if (j + 1 < 16) {
-        c3 = FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8) ? color : myBLACK;
+        c3 = FONT_PIXEL_8x16(fontBuf, i/8, j+1, i%8) ? color : myBLACK;
       }
-      if (i + 1 < sj_length * 8 && j + 1 < 16) {
-        c4 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j+1, (i+1)%8) ? color : myBLACK;
+      if (i + 1 < sjLength * 8 && j + 1 < 16) {
+        c4 = FONT_PIXEL_8x16(fontBuf, (i+1)/8, j+1, (i+1)%8) ? color : myBLACK;
       }
       if (VALID_X(x1) && VALID_Y(y1)) {
         dma_display->drawPixel(x1, y1, c1); // 左上ピクセルは元の色そのまま
       }
       if (VALID_X(x2) && VALID_Y(y1)) {
-        dma_display->drawPixel(x2, y1, averageColor565(c1, c2)); // 右上ピクセルは左右の平均色を使用
+        dma_display->drawPixel(x2, y1, averageOfColor565(c1, c2)); // 右上ピクセルは左右の平均色を使用
       }
       if (VALID_X(x1) && VALID_Y(y2)) {
-        dma_display->drawPixel(x1, y2, averageColor565(c1, c3)); // 左下ピクセルは上下の平均色を使用
+        dma_display->drawPixel(x1, y2, averageOfColor565(c1, c3)); // 左下ピクセルは上下の平均色を使用
       }
       if (VALID_X(x2) && VALID_Y(y2)) {
-        dma_display->drawPixel(x2, y2, averageColor565(c1, c2, c3, c4)); // 右下ピクセルは斜め上下左右の平均色を使用
+        dma_display->drawPixel(x2, y2, averageOfColor565(c1, c2, c3, c4)); // 右下ピクセルは斜め上下左右の平均色を使用
       }
     }
   }
@@ -408,7 +408,7 @@ void setup()
   // Display Setup
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
   dma_display->begin();
-  dma_display->setBrightness8(sliderValue.toInt()); // 0-255
+  dma_display->setBrightness8(sliderValue); // 0-255
   dma_display->clearScreen();
 
   Serial.begin(115200);
@@ -546,12 +546,12 @@ void loop()
       mode = PLAY_GIF;
 
     } else if (mode == PLAY_TEXT_1) {
-      // 2行・スクロール表示のモード
+      // テキスト2個・折り返しなし・左方向スクロールのモード
       Serial.println("mode = PLAY_TEXT_1");
       drawTextIn16x32Font(fontBufList[0], sjLengthList[0], 0 + scrollX1, 0, myRED);
       drawTextIn16x32Font(fontBufList[1], sjLengthList[1], 0 + scrollX2, 32, myGREEN);
-      int16_t maxX1 = scrollX1 + 8*sjLengthList[0] * 2;
-      int16_t maxX2 = scrollX2 + 8*sjLengthList[1] * 2;
+      int16_t maxX1 = scrollX1 + sjLengthList[0] * 16;
+      int16_t maxX2 = scrollX2 + sjLengthList[1] * 16;
       if (VALID_X(maxX1)) { // 左にスクロールする前提で、残像が残らないように1列分消す
         dma_display->drawRect(maxX1, 0, 1, 32, myBLACK);
       }
@@ -581,7 +581,7 @@ void loop()
       mode = PLAY_TEXT_1;
 
     } else if (mode == PLAY_TEXT_2) {
-      // 文字数最大化のモード
+      // テキスト1個・折り返し・上方向スクロールのモード
       Serial.println("mode = PLAY_TEXT_2");
       int sumSjLength = 0;
       for (int i=0; i<playText1Lines; i++) {
@@ -599,14 +599,14 @@ void loop()
     } else if (mode == PLAY_NEXT_TEXT_2) {
       Serial.println("mode = PLAY_NEXT_TEXT_2");
       Serial.println("playText1: " + playText1 + ", len: " + String(playText1.length()));
-      std::vector<String> ws = wrapTextForDisplay(playText1, PANEL_RES_X * PANEL_CHAIN);
-      playText1Lines = ws.size();
+      std::vector<String> lines = wrapTextForDisplay(playText1, PANEL_RES_X * PANEL_CHAIN);
+      playText1Lines = lines.size();
       int sumSjLength = 0;
       for (int i=0; i<playText1Lines; i++) {
-        sjLengthList[i] = SFR.StrDirect_ShinoFNT_readALL(ws[i], &fontBufList[0][sumSjLength]);
+        sjLengthList[i] = SFR.StrDirect_ShinoFNT_readALL(lines[i], &fontBufList[0][sumSjLength]);
         sumSjLength += sjLengthList[i];
       }
-      bool isTextFixed = playText1Lines <= 4;
+      bool isTextFixed = playText1Lines <= PANEL_RES_Y / 16;
       minScrollY = isTextFixed ? 0 : (-playText1Lines * 16);
       maxScrollY = isTextFixed ? 0 : PANEL_RES_Y;
       scrollY = maxScrollY;

@@ -8,11 +8,9 @@
 #include "webserver.h"
 #include "webpages.h"
 
-const char *PARAM_INPUT = "value";
-
 extern MatrixPanel_I2S_DMA *dma_display;
 
-extern String sliderValue;
+extern int sliderValue;
 
 extern Config config;
 extern AsyncWebServer *server;
@@ -28,23 +26,19 @@ String processor(const String& var) {
   if (var == "FIRMWARE") {
     return FIRMWARE_VERSION;
   }
-
   if (var == "FREELittleFS") {
     return humanReadableSize((LittleFS.totalBytes() - LittleFS.usedBytes()));
   }
-
   if (var == "USEDLittleFS") {
     return humanReadableSize(LittleFS.usedBytes());
   }
-
   if (var == "TOTALLittleFS") {
     return humanReadableSize(LittleFS.totalBytes());
   }
-  
   if (var == "SLIDERVALUE"){
-    return sliderValue;
+    return String(sliderValue);
   }
-    return String();
+  return "";
 }
 
 // used by server.on functions to discern whether a user has the correct httpapitoken OR is authenticated by username and password
@@ -134,16 +128,17 @@ void configureWebServer() {
   });
 
   server->on("/slider", HTTP_GET, [] (AsyncWebServerRequest *request) {
-    String inputMessage;
+    String logmessage = "Client:" + request->client()->remoteIP().toString() + " " + request->url();
+    Serial.println(logmessage);
     // GET input1 value on <ESP_IP>/slider?value=<inputMessage>
-    if (request->hasParam(PARAM_INPUT)) {
-      inputMessage = request->getParam(PARAM_INPUT)->value();
-      sliderValue = inputMessage;
-      dma_display->setBrightness8(sliderValue.toInt());
+    if (request->hasParam("value")) {
+      sliderValue = request->getParam("value")->value().toInt();
+      dma_display->setBrightness8(sliderValue);
+      request->send(200, "text/html", "OK");
     } else {
-      inputMessage = "No message sent";
+      request->send(400, "text/plain", "ERROR: value param required");
+      Serial.println(logmessage + " ERROR: value param required");
     }
-    Serial.print(inputMessage);
   });
 
   server->on("/reboot", HTTP_GET, [](AsyncWebServerRequest * request) {
@@ -185,6 +180,11 @@ void configureWebServer() {
         Serial.println(logmessage + " ERROR: text1 or text2 param required");
         return;
       }
+      if (mode == INITIAL) {
+        request->send(400, "text/plain", "ERROR: mode is INITIAL");
+        Serial.println(logmessage + " ERROR: mode is INITIAL");
+        return;
+      }
 
       playText1 = String(request->arg("text1").substring(0, MAX_TEXT_LENGTH));
       playText2 = String(request->arg("text2").substring(0, MAX_TEXT_LENGTH));
@@ -205,6 +205,11 @@ void configureWebServer() {
       if (!request->hasArg("text1")) {
         request->send(400, "text/plain", "ERROR: text1 param required");
         Serial.println(logmessage + " ERROR: text1 param required");
+        return;
+      }
+      if (mode == INITIAL) {
+        request->send(400, "text/plain", "ERROR: mode is INITIAL");
+        Serial.println(logmessage + " ERROR: mode is INITIAL");
         return;
       }
 
@@ -229,6 +234,11 @@ void configureWebServer() {
     if (!request->hasParam("name") || !request->hasParam("action")) {
       request->send(400, "text/plain", "ERROR: name and action params required");
       Serial.println(logHeader + " ERROR: name and action params required");
+      return;
+    }
+    if (mode == INITIAL) {
+      request->send(400, "text/plain", "ERROR: mode is INITIAL");
+      Serial.println(logHeader + " ERROR: mode is INITIAL");
       return;
     }
 
