@@ -249,18 +249,20 @@ String listFiles(bool ishtml)
   }
   while (foundfile)
   {
-    if (ishtml)
-    {
-      returnText += "<tr align='left'><td>" + String(foundfile.name()) + "</td><td>" + humanReadableSize(foundfile.size()) + "</td>";
-      returnText += "<td>"
-                    "<img src=\"/file?name=" + String(foundfile.name()) + "&action=show\">"
-                    "</td>";
-      returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'play')\">Play</button>";
-      returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'delete')\">Delete</button></tr>";
-    }
-    else
-    {
-      returnText += "File: " + String(foundfile.name()) + " Size: " + humanReadableSize(foundfile.size()) + "\n";
+    if (String(foundfile.name()).endsWith(".gif")) {
+      if (ishtml)
+      {
+        returnText += "<tr align='left'><td>" + String(foundfile.name()) + "</td><td>" + humanReadableSize(foundfile.size()) + "</td>";
+        returnText += "<td>"
+                      "<img src=\"/file?name=" + String(foundfile.name()) + "&action=show\">"
+                      "</td>";
+        returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'play')\">Play</button>";
+        returnText += "<td><button onclick=\"downloadDeleteButton('" + String(foundfile.name()) + "', 'delete')\">Delete</button></tr>";
+      }
+      else
+      {
+        returnText += "File: " + String(foundfile.name()) + " Size: " + humanReadableSize(foundfile.size()) + "\n";
+      }
     }
     foundfile = root.openNextFile();
   }
@@ -560,7 +562,7 @@ void loop()
       }
       scrollX1 = (scrollX1 <= minScrollX1) ? maxScrollX1 : (scrollX1 - 1);
       scrollX2 = (scrollX2 <= minScrollX2) ? maxScrollX2 : (scrollX2 - 1);
-      delay(5); // 10ms + 5ms = 15ms
+      delay(0); // 0 + 10 = 10ms
 
     } else if (mode == PLAY_NEXT_TEXT_1) {
       Serial.println("mode = PLAY_NEXT_TEXT_1");
@@ -594,7 +596,7 @@ void loop()
         sumSjLength += sjLengthList[i];
       }
       scrollY = (scrollY <= minScrollY) ? maxScrollY : scrollY - 1;
-      delay(50); // 10ms + 50ms = 60ms
+      delay(50); // 50 + 10 = 60ms
 
     } else if (mode == PLAY_NEXT_TEXT_2) {
       Serial.println("mode = PLAY_NEXT_TEXT_2");
@@ -620,7 +622,7 @@ void loop()
       delay(1000);
     }
 
-    // 無限ループ時も他タスクが動くように少しdelayさせる
+    // 無限ループ時も他タスクが動くようにdelayさせる
     delay(10);
   }
 } // end loop

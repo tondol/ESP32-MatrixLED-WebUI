@@ -31,9 +31,12 @@ const char index_html[] PROGMEM = R"rawliteral(
   <p id="detailsheader"></p>
   <p id="details"></p>
 <script>
+function _(el) {
+  return document.getElementById(el);
+}
 function updateSliderPWM(element) {
-  var sliderValue = document.getElementById("pwmSlider").value;
-  document.getElementById("textSliderValue").innerHTML = sliderValue;
+  var sliderValue = _("pwmSlider").value;
+  _("textSliderValue").innerHTML = sliderValue;
   var xhr = new XMLHttpRequest();
   xhr.open("GET", "/slider?value="+sliderValue, true);
   xhr.send();
@@ -45,7 +48,7 @@ function logoutButton() {
   setTimeout(function(){ window.open("/logged-out","_self"); }, 1000);
 }
 function rebootButton() {
-  document.getElementById("details").innerHTML = "Invoking Reboot ...";
+  _("details").innerHTML = "Invoking Reboot ...";
   var xhr = new XMLHttpRequest();
   xhr.open("GET", "/reboot", false);
   xhr.send();
@@ -55,8 +58,8 @@ function listFilesButton() {
   xmlhttp=new XMLHttpRequest();
   xmlhttp.open("GET", "/listfiles", false);
   xmlhttp.send();
-  document.getElementById("detailsheader").innerHTML = "<h3>Files<h3>";
-  document.getElementById("details").innerHTML = xmlhttp.responseText;
+  _("detailsheader").innerHTML = "<h3>Files<h3>";
+  _("details").innerHTML = xmlhttp.responseText;
 }
 function downloadDeleteButton(filename, action) {
   var urltocall = "/file?name=" + filename + "&action=" + action;
@@ -64,13 +67,13 @@ function downloadDeleteButton(filename, action) {
   if (action == "delete") {
     xmlhttp.open("GET", urltocall, false);
     xmlhttp.send();
-    document.getElementById("status").innerHTML = xmlhttp.responseText;
+    _("status").innerHTML = xmlhttp.responseText;
     xmlhttp.open("GET", "/listfiles", false);
     xmlhttp.send();
-    document.getElementById("details").innerHTML = xmlhttp.responseText;
+    _("details").innerHTML = xmlhttp.responseText;
   }
   if (action == "download") {
-    document.getElementById("status").innerHTML = "";
+    _("status").innerHTML = "";
     window.open(urltocall,"_blank");
   }
    if (action == "play") {
@@ -79,8 +82,8 @@ function downloadDeleteButton(filename, action) {
   }
 }
 function showUploadButtonFancy() {
-  document.getElementById("detailsheader").innerHTML = "<h3>Upload File<h3>"
-  document.getElementById("status").innerHTML = "";
+  _("detailsheader").innerHTML = "<h3>Upload File<h3>"
+  _("status").innerHTML = "";
   var uploadform = "<form method = \"POST\" action = \"/\" enctype=\"multipart/form-data\"><input type=\"file\" name=\"data\"/><input type=\"submit\" name=\"upload\" value=\"Upload\" title = \"Upload File\"></form>"
   document.getElementById("details").innerHTML = uploadform;
   var uploadform =
@@ -90,10 +93,10 @@ function showUploadButtonFancy() {
   "<h3 id=\"status\"></h3>" +
   "<p id=\"loaded_n_total\"></p>" +
   "</form>";
-  document.getElementById("details").innerHTML = uploadform;
+  _("details").innerHTML = uploadform;
 }
 function playText1Button() {
-  document.getElementById("detailsheader").innerHTML = "<h3>Play Text 1<h3>";
+  _("detailsheader").innerHTML = "<h3>Play Text 1<h3>";
   var postform =
   "<form id=\"post_form\" method=\"post\" action=\"/playtext1\">" +
   "<p><input type=\"text\" name=\"text1\" id=\"text1\" placeholder=\"1行目のテキストを入力します\"></p>" +
@@ -106,16 +109,16 @@ function playText1Button() {
         method: form.method,
         body: new FormData(form),
     });
-    localStorage.setItem('text1', document.getElementById("text1").value);
-    localStorage.setItem('text2', document.getElementById("text2").value);
+    localStorage.setItem('text1', _("text1").value);
+    localStorage.setItem('text2', _("text2").value);
     e.preventDefault();
   });
-  document.getElementById("details").innerHTML = postform;
-  document.getElementById("text1").value = localStorage.getItem('text1');
-  document.getElementById("text2").value = localStorage.getItem('text2');
+  _("details").innerHTML = postform;
+  _("text1").value = localStorage.getItem('text1');
+  _("text2").value = localStorage.getItem('text2');
 }
 function playText2Button() {
-  document.getElementById("detailsheader").innerHTML = "<h3>Play Text 2<h3>";
+  _("detailsheader").innerHTML = "<h3>Play Text 2<h3>";
   var postform =
   "<form id=\"post_form\" method=\"post\" action=\"/playtext2\">" +
   "<p><textarea name=\"text1\" id=\"text1\" placeholder=\"テキストを入力します\"></textarea></p>" +
@@ -127,14 +130,11 @@ function playText2Button() {
         method: form.method,
         body: new FormData(form),
     });
-    localStorage.setItem('text1', document.getElementById("text1").value);
+    localStorage.setItem('text1', _("text1").value);
     e.preventDefault();
   });
-  document.getElementById("details").innerHTML = postform;
-  document.getElementById("text1").value = localStorage.getItem('text1');
-}
-function _(el) {
-  return document.getElementById(el);
+  _("details").innerHTML = postform;
+  _("text1").value = localStorage.getItem('text1');
 }
 function uploadFile() {
   var file = _("file1").files[0];
@@ -163,9 +163,9 @@ function completeHandler(event) {
   xmlhttp=new XMLHttpRequest();
   xmlhttp.open("GET", "/listfiles", false);
   xmlhttp.send();
-  document.getElementById("status").innerHTML = "File Uploaded";
-  document.getElementById("detailsheader").innerHTML = "<h3>Files<h3>";
-  document.getElementById("details").innerHTML = xmlhttp.responseText;
+  _("status").innerHTML = "File Uploaded";
+  _("detailsheader").innerHTML = "<h3>Files<h3>";
+  _("details").innerHTML = xmlhttp.responseText;
 }
 function errorHandler(event) {
   _("status").innerHTML = "Upload Failed";

@@ -74,7 +74,7 @@ void handleUpload(AsyncWebServerRequest *request, String filename, size_t index,
     }
 
     if (final) {
-      logmessage = "Upload Complete: " + String(filename) + ",size: " + String(index + len);
+      logmessage = "Upload Complete: " + String(filename) + " size=" + String(index + len);
       // close the file handle as the upload is now done
       request->_tempFile.close();
       Serial.println(logmessage);
@@ -243,7 +243,7 @@ void configureWebServer() {
     }
 
     String fileName = "/" + String(request->getParam("name")->value());
-    const char *fileAction = request->getParam("action")->value().c_str();
+    String fileAction = request->getParam("action")->value();
     logHeader = "Client:" + request->client()->remoteIP().toString() + " " + request->url() + "?name=" + String(fileName) + "&action=" + String(fileAction);
 
     if (!LittleFS.exists(fileName)) {
@@ -259,17 +259,17 @@ void configureWebServer() {
       return;
     }
 
-    if (strcmp(fileAction, "delete") == 0) {
+    if (fileAction == "delete") {
       LittleFS.remove(fileName);
       request->send(200, "text/plain", "Deleted File: " + String(fileName));
       Serial.println(logHeader + " deleted");
 
-    } else if (strcmp(fileAction, "play") == 0) {
+    } else if (fileAction == "play") {
       nextGifFileName = fileName;
       mode = PLAY_NEXT_GIF;
       Serial.println(logHeader + " opening");
 
-    } else if (strcmp(fileAction, "show") == 0) {
+    } else if (fileAction == "show") {
       fs::File f = LittleFS.open(fileName, "r");
       // プレビュー用に冒頭5KBだけを返す
       size_t size = min((size_t)5*1024, f.size());
@@ -281,6 +281,7 @@ void configureWebServer() {
         return max(0, bytes);
       });
       delay(100); // 早すぎると後続のメモリ確保に失敗する??
+      response->addHeader("Cache-Control", "max-age=3600");
       request->send(response);
       Serial.println(logHeader + " previewing");
 
