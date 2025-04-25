@@ -30,7 +30,4 @@ enum Mode {
   SHOULD_REBOOT,
 };
 
-// 座標の値が有効かどうかをチェックするためのヘルパー
-#define VALID_X(x) ((x) >= 0 && (x) < PANEL_RES_X * PANEL_CHAIN)
-#define VALID_Y(y) ((y) >= 0 && (y) < PANEL_RES_Y)
 #define MAX_TEXT_LENGTH 512

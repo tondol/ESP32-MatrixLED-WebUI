@@ -285,7 +285,11 @@ String humanReadableSize(const size_t bytes)
     return String(bytes / 1024.0 / 1024.0 / 1024.0) + " GB";
 }
 
-#define FONT_PIXEL_8x16(b, j, i, k) (b[j][i] & (0x80 >> k))
+// フォントのピクセルデータを取得するためのヘルパー
+#define FONT_PIXEL_8x16(b, i, iy, ix) (b[i][iy] & (0x80 >> (ix)))
+// 座標の値が有効かどうかをチェックするためのヘルパー
+#define VALID_X(x) ((x) >= 0 && (x) < PANEL_RES_X * PANEL_CHAIN)
+#define VALID_Y(y) ((y) >= 0 && (y) < PANEL_RES_Y)
 
 // https://medium.com/@luc.trudeau/fast-averaging-of-high-color-16-bit-pixels-cb4ac7fd1488
 inline uint16_t averageColor565(uint16_t a, uint16_t b) {
@@ -298,26 +302,18 @@ inline uint16_t averageColor565(uint16_t a, uint16_t b, uint16_t c, uint16_t d) 
 }
 
 void drawTextIn8x16Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
-  for (int j=0; j<sj_length; j++) {
-    for(int i=0; i<16; i++) {
-      for (int k=0; k<8; k++) {
-        int16_t xx = 8*j+k;
-        int16_t yy = i;
-        if (FONT_PIXEL_8x16(font_buf, j, i, k)) {
-          if (VALID_X(x + xx) && VALID_Y(y + yy)) {
-            dma_display->drawPixel(x + xx, y + yy, color);
-          }
-        } else {
-          if (VALID_X(x + xx) && VALID_Y(y + yy)) {
-            dma_display->drawPixel(x + xx, y + yy, myBLACK);
-          }
-        }
+  for (int i=0; i<8 * sj_length; i++) {
+    for(int j=0; j<16; j++) {
+      int16_t xx = x + i;
+      int16_t yy = y + j;
+      if (VALID_X(xx) && VALID_Y(yy)) {
+        dma_display->drawPixel(xx, yy, FONT_PIXEL_8x16(font_buf, i/8, j, i%8) ? color : myBLACK);
       }
     }
   }
 }
 
-// バイリニア補完で2倍角描画する
+// バイリニア補完でフォントを2倍角で描画する
 void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, int16_t y, uint16_t color){
   for (int i=0; i<sj_length * 8; i++) {
     for (int j=0; j<16; j++) {
@@ -326,29 +322,29 @@ void drawTextIn16x32Font(uint8_t font_buf[][16], int16_t sj_length, int16_t x, i
       int y1 = y + j*2;
       int y2 = y + j*2 + 1;
       int c1 = FONT_PIXEL_8x16(font_buf, i/8, j, i%8) ? color : myBLACK;
-      if (VALID_X(x1)) {
-        int c2 = 0;
-        if (j + 1 < 16) {
-          c2 = FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8) ? color : myBLACK;
-        }
-        dma_display->drawPixel(x1, y1, c1);
-        dma_display->drawPixel(x1, y2, averageColor565(c1, c2));
+      int c2 = myBLACK;
+      int c3 = myBLACK;
+      int c4 = myBLACK;
+      if (i + 1 < sj_length * 8) {
+        c2 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j, (i+1)%8) ? color : myBLACK;
       }
-      if (VALID_X(x2)) {
-        int c2 = 0;
-        int c3 = 0;
-        int c4 = 0;
-        if (i + 1 < sj_length * 8) {
-          c2 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j, (i+1)%8);
-        }
-        if (j + 1 < 16) {
-          c3 += FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8);
-        }
-        if (i + 1 < sj_length * 8 && j + 1 < 16) {
-          c4 += FONT_PIXEL_8x16(font_buf, (i+1)/8, j+1, (i+1)%8);
-        }
-        dma_display->drawPixel(x2, y1, averageColor565(c1, c2));
-        dma_display->drawPixel(x2, y2, averageColor565(c1, c2, c3, c4));
+      if (j + 1 < 16) {
+        c3 = FONT_PIXEL_8x16(font_buf, i/8, j+1, i%8) ? color : myBLACK;
+      }
+      if (i + 1 < sj_length * 8 && j + 1 < 16) {
+        c4 = FONT_PIXEL_8x16(font_buf, (i+1)/8, j+1, (i+1)%8) ? color : myBLACK;
+      }
+      if (VALID_X(x1) && VALID_Y(y1)) {
+        dma_display->drawPixel(x1, y1, c1); // 左上ピクセルは元の色そのまま
+      }
+      if (VALID_X(x2) && VALID_Y(y1)) {
+        dma_display->drawPixel(x2, y1, averageColor565(c1, c2)); // 右上ピクセルは左右の平均色を使用
+      }
+      if (VALID_X(x1) && VALID_Y(y2)) {
+        dma_display->drawPixel(x1, y2, averageColor565(c1, c3)); // 左下ピクセルは上下の平均色を使用
+      }
+      if (VALID_X(x2) && VALID_Y(y2)) {
+        dma_display->drawPixel(x2, y2, averageColor565(c1, c2, c3, c4)); // 右下ピクセルは斜め上下左右の平均色を使用
       }
     }
   }
@@ -591,9 +587,7 @@ void loop()
       for (int i=0; i<playText1Lines; i++) {
         int16_t y = scrollY + i * 16;
         int16_t maxY = scrollY + (i+1) * 16;
-        if (y > -16 && y < PANEL_RES_Y) { // 1pxでも描画領域にあるなら描画する
-          drawTextIn8x16Font(&fontBufList[0][sumSjLength], sjLengthList[i], 0, y, myWHITE);
-        }
+        drawTextIn8x16Font(&fontBufList[0][sumSjLength], sjLengthList[i], 0, y, myWHITE);
         if (VALID_Y(maxY)) { // 上にスクロールする前提で、残像が残らないように1行分消す
           dma_display->drawRect(0, maxY, PANEL_RES_X * PANEL_CHAIN, 1, myBLACK);
         }
